@@ -3,7 +3,7 @@ defmodule Flume.Redis.Job do
 
   alias Flume.Logger
   alias Flume.Support.Time
-  alias Flume.Redis.{Client, Script, SortedSet}
+  alias Flume.Redis.{Client, Script, SortedSet, Optimistic}
 
   @bulk_dequeue_sha Script.sha(:bulk_dequeue)
   @bulk_dequeue_limited_sha Script.sha(:bulk_dequeue_limited)
@@ -65,6 +65,27 @@ defmodule Flume.Redis.Job do
     ])
     |> do_bulk_dequeue()
   end
+
+  defdelegate bulk_dequeue_optimistic(
+                dequeue_key,
+                processing_sorted_set_key,
+                count,
+                current_score
+              ),
+              to: Optimistic,
+              as: :bulk_dequeue
+
+  defdelegate bulk_dequeue_optimistic(
+                dequeue_key,
+                processing_sorted_set_key,
+                limit_sorted_set_key,
+                count,
+                max_count,
+                previous_score,
+                current_score
+              ),
+              to: Optimistic,
+              as: :bulk_dequeue_rate_limited
 
   defp do_bulk_dequeue(command) do
     case Client.query(command) do
