@@ -88,6 +88,34 @@ defmodule Flume.Queue.ManagerTest do
     end
   end
 
+  describe "Concurrent fetches" do
+    test "fetches unique jobs" do
+      count = 2
+      jobs = TestWithRedis.serialized_jobs("Elixir.Worker", count)
+
+      Job.bulk_enqueue("#{@namespace}:queue:test", jobs)
+
+      results =
+        Enum.map(1..count, fn _ ->
+          Task.async(fn ->
+            {:ok, jobs} =
+              Manager.fetch_jobs(
+                @namespace,
+                "test",
+                1,
+                %{rate_limit_count: count, rate_limit_scale: 50000}
+              )
+
+            jobs
+          end)
+        end)
+        |> Enum.flat_map(&Task.await/1)
+
+      assert 1 == length(results)
+      assert 1 == Client.zcount!("#{@namespace}:queue:limit:test")
+    end
+  end
+
   describe "retry_or_fail_job/4" do
     test "adds job to retry queue by incrementing count" do
       job =

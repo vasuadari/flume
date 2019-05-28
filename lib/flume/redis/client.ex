@@ -146,6 +146,10 @@ defmodule Flume.Redis.Client do
     query([@set, key, value])
   end
 
+  def set_nx(key, value, timeout) do
+    query([@set, key, value, "NX", "PX", timeout])
+  end
+
   @doc """
   Pushes an element at the start of a list.
 
@@ -295,6 +299,14 @@ defmodule Flume.Redis.Client do
     query!([@lrange, key, range_start, range_end])
   end
 
+  def lrange(key, range_start \\ 0, range_end \\ -1) do
+    query([@lrange, key, range_start, range_end])
+  end
+
+  def lrange_command(key, range_start \\ 0, range_end \\ -1) do
+    [@lrange, key, range_start, range_end]
+  end
+
   def zadd(key, score, value) do
     query([@zadd, key, score, value])
   end
@@ -323,8 +335,16 @@ defmodule Flume.Redis.Client do
     query!([@zcount, key, range_start, range_end])
   end
 
-  def zremrangebyscore!(key, range_start \\ "-inf", range_end \\ "+inf") do
-    query!([@zremrangebyscore, key, range_start, range_end])
+  def zcount(key, range_start \\ "-inf", range_end \\ "+inf") do
+    query([@zcount, key, range_start, range_end])
+  end
+
+  def zcount_command(key, range_start \\ "-inf", range_end \\ "+inf") do
+    [@zcount, key, range_start, range_end]
+  end
+
+  def zremrangebyscore(key, range_start \\ "-inf", range_end \\ "+inf") do
+    query([@zremrangebyscore, key, range_start, range_end])
   end
 
   def del!(key) do
@@ -367,57 +387,10 @@ defmodule Flume.Redis.Client do
     Redix.pipeline(redix_worker_name(), commands, timeout: Config.redis_timeout())
   end
 
-  def pipeline!(_conn, []), do: []
+  def transaction_pipeline([]), do: []
 
-  def pipeline!(conn, commands) when is_list(commands) do
-    Redix.pipeline!(conn, commands, timeout: Config.redis_timeout())
-  end
-
-  def transaction!(lock_key, ttl, commands) do
-    :poolboy.transaction(
-      redix_transaction_worker_name(),
-      fn connection ->
-        watch = ["WATCH", lock_key]
-        get = ["GET", lock_key]
-
-        ["OK", is_locked] = pipeline!(connection, [watch, get])
-
-        if is_locked do
-          ["OK"] = pipeline!(connection, [["UNWATCH"]])
-          :locked
-        else
-          pipeline_command =
-            [["MULTI"], ["SETEX", lock_key, ttl, true]]
-            |> Enum.concat(commands)
-            |> Enum.concat([["EXEC"]])
-
-          expected =
-            Enum.concat([
-              ["OK"],
-              ["QUEUED"],
-              Enum.map(commands, fn _ -> "QUEUED" end)
-            ])
-
-          response = pipeline!(connection, pipeline_command)
-          ^expected = Enum.take(response, length(expected))
-
-          case Enum.at(response, -1) do
-            nil ->
-              :locked
-
-            _ ->
-              {:ok, response}
-          end
-        end
-      end,
-      Config.redis_timeout()
-    )
-  end
-
-  def transaction_pipeline!([]), do: []
-
-  def transaction_pipeline!(commands) when is_list(commands) do
-    Redix.transaction_pipeline!(redix_worker_name(), commands, timeout: Config.redis_timeout())
+  def transaction_pipeline(commands) when is_list(commands) do
+    Redix.transaction_pipeline(redix_worker_name(), commands, timeout: Config.redis_timeout())
   end
 
   # Private API
@@ -427,9 +400,5 @@ defmodule Flume.Redis.Client do
 
   defp redix_worker_name do
     :"#{Flume.Redis.Supervisor.redix_worker_prefix()}_#{random_index()}"
-  end
-
-  defp redix_transaction_worker_name do
-    Flume.Redis.Supervisor.redix_transaction_worker_name()
   end
 end

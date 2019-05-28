@@ -6,9 +6,8 @@ defmodule Flume.Queue.Manager do
   alias Flume.Queue.Backoff
   alias Flume.Support.Time, as: TimeExtension
 
-  @external_resource "priv/scripts/bulk_dequeue.lua"
-  @external_resource "priv/scripts/bulk_dequeue_limited.lua"
   @external_resource "priv/scripts/enqueue_processing_jobs.lua"
+  @external_resource "priv/scripts/release_lock.lua"
 
   def enqueue(
         namespace,
@@ -93,27 +92,6 @@ defmodule Flume.Queue.Manager do
       processing_key(namespace, queue),
       count,
       TimeExtension.time_to_score()
-    )
-  end
-
-  # Exposed for benchmarks
-  def fetch_jobs_optimistic(
-        namespace,
-        queue,
-        count,
-        %{rate_limit_count: rate_limit_count, rate_limit_scale: rate_limit_scale} =
-          rate_limit_opts
-      ) do
-    {current_score, previous_score} = current_and_previous_score(rate_limit_scale)
-
-    Job.bulk_dequeue_optimistic(
-      queue_key(namespace, queue),
-      processing_key(namespace, queue),
-      rate_limit_key(namespace, queue, rate_limit_opts[:rate_limit_key]),
-      count,
-      rate_limit_count,
-      previous_score,
-      current_score
     )
   end
 

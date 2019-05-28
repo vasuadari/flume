@@ -12,10 +12,10 @@ defmodule Mix.Tasks.Flume.RedisBenchmark do
     count: 10_000,
     queues: 20,
     dequeue_batch: 50,
-    enqueue_concurrency: 1000,
+    enqueue_concurrency: 500,
     # (count * pre_seed_multiplier) jobs get pre-seeded split into all queues
     pre_seed_multiplier: 1,
-    dequeue_poll_timeout: 500
+    dequeue_poll_timeout: 1000
   ]
 
   def run(args \\ []) do
@@ -55,34 +55,18 @@ defmodule Mix.Tasks.Flume.RedisBenchmark do
             opts
           )
         end,
-        "transactional_dequeue" => fn jobs_queue_mapping ->
+        "bulk_dequeue" => fn jobs_queue_mapping ->
           start_enqueue_dequeue(
             noop,
-            &old_bulk_dequeue/2,
+            &bulk_dequeue/2,
             jobs_queue_mapping,
             opts
           )
         end,
-        "optimistic_dequeue" => fn jobs_queue_mapping ->
-          start_enqueue_dequeue(
-            noop,
-            &new_bulk_dequeue/2,
-            jobs_queue_mapping,
-            opts
-          )
-        end,
-        "interleaved_transactional_enqueue_dequeue" => fn jobs_queue_mapping ->
+        "interleaved_enqueue_dequeue" => fn jobs_queue_mapping ->
           start_enqueue_dequeue(
             &enqueue/2,
-            &old_bulk_dequeue/2,
-            jobs_queue_mapping,
-            opts
-          )
-        end,
-        "interleaved_optimistic_enqueue_dequeue" => fn jobs_queue_mapping ->
-          start_enqueue_dequeue(
-            &enqueue/2,
-            &new_bulk_dequeue/2,
+            &bulk_dequeue/2,
             jobs_queue_mapping,
             opts
           )
@@ -128,7 +112,7 @@ defmodule Mix.Tasks.Flume.RedisBenchmark do
       start_dequeue(jobs_queue_mapping, dequeue_fn, dequeue_batch, dequeue_poll_timeout)
 
     enqueue_fn.(jobs_queue_mapping, enqueue_concurrency)
-    Enum.each(dequeue_tasks, &Process.exit(&1, :normal))
+    Enum.each(dequeue_tasks, &Process.exit(&1, :kill))
   end
 
   defp enqueue(jobs_queue_mapping, concurrency) do
@@ -194,20 +178,10 @@ defmodule Mix.Tasks.Flume.RedisBenchmark do
   end
 
   defp start_poll_server(function, poll_timeout) do
-    Task.start_link(__MODULE__, :poll, [function, poll_timeout])
+    Task.start(__MODULE__, :poll, [function, poll_timeout])
   end
 
-  defp new_bulk_dequeue(queue, batch) do
-    {:ok, _jobs} =
-      Manager.fetch_jobs_optimistic(
-        @namespace,
-        queue,
-        batch,
-        @rate_limit_opts
-      )
-  end
-
-  defp old_bulk_dequeue(queue, batch) do
+  defp bulk_dequeue(queue, batch) do
     {:ok, _jobs} =
       Manager.fetch_jobs(
         @namespace,

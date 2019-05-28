@@ -70,6 +70,14 @@ defmodule FlumeTest do
       caller_name = :test_process
       Process.register(self(), caller_name)
 
+      # Push events to Redis
+      Enum.each(1..4, fn _ ->
+        Job.enqueue(
+          "#{@namespace}:queue:#{pipeline.queue}",
+          TestWithRedis.serialized_job("TestWorker")
+        )
+      end)
+
       {:ok, producer} = Producer.start_link(pipeline)
       {:ok, producer_consumer} = ProducerConsumer.start_link(pipeline)
 
@@ -80,14 +88,6 @@ defmodule FlumeTest do
           max_demand: max_demand,
           sleep_time: sleep_time
         })
-
-      # Push events to Redis
-      Enum.each(1..4, fn _ ->
-        Job.enqueue(
-          "#{@namespace}:queue:#{pipeline.queue}",
-          TestWithRedis.serialized_job("TestWorker")
-        )
-      end)
 
       assert_receive {:received, events, received_time_1}, 4_000
       assert length(events) == 2

@@ -16,7 +16,6 @@ services:
 stages:
   - lint
   - test
-  - benchmark
 
 before_script:
   - mix local.rebar --force
@@ -43,20 +42,6 @@ test:
     paths:
       - cover/
     expire_in: 1 week
-  tags:
-    - shared
-    - runner
-
-redis-benchmark:
-  <<: *shared-runner
-  stage: test
-  variables:
-    FLUME_REDIS_HOST: localhost
-    FLUME_REDIS_PORT: 6379
-    MIX_ENV: test
-  script:
-    - mix flume.redis_benchmark
-  coverage: '/\[TOTAL\]\s+(\d+\.\d+)%/'
   tags:
     - shared
     - runner
